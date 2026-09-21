@@ -3,6 +3,8 @@
 #include <vector>
 #include <fstream>
 #include <cstdlib>
+#include <unistd.h>
+#include <sys/wait.h>
 
 using namespace std;
 
@@ -12,6 +14,10 @@ struct Actividad
     string nombre_Actividad;
     int tiempo;
     vector<string> dependencias;
+
+    int pipe_fd[2];
+    pid_t pid_hijo = -1;
+    bool completada = false;
 };
 
 int main(int argc, char* argv[])
@@ -29,7 +35,19 @@ int main(int argc, char* argv[])
     cout << "Archivo que se va a leer: " <<nombreArchivo << endl;
     cout << "Con el límite de concurrencia: " << k << endl;
 
-    
+    vector<Actividad> lista_actividades = {
+        {"1", "prender_carbon", 2000, {}, {-1, -1}, -1, false},
+        {"2", "comprar_carne", 3000, {}, {-1, -1}, -1, false}
+    };
+
+    int procesos_activos = 0;
+    int tareas_completadas = 0;
+    int total_tareas = lista_actividades.size();
+
+    cout << "\n[Planificador] Iniciando asado de prueba..." << endl;
+
+
+    return 0;
 }
 
 
