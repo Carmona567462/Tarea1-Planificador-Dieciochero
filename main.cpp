@@ -198,6 +198,36 @@ bool validarIdsUnicos(const vector<Actividad>& lista_actividades)
     return true;
 }
 
+bool validarDependencias(const vector<Actividad>& lista_actividades)
+{
+    unordered_set<string> idsExistentes;
+
+    for (const Actividad& actividad : lista_actividades)
+    {
+        idsExistentes.insert(actividad.id_Actividad);
+    }
+
+    for (const Actividad& actividad : lista_actividades)
+    {
+        for (const string& dependencia : actividad.dependencias)
+        {
+            if (idsExistentes.find(dependencia) == idsExistentes.end())
+            {
+                cerr << "Error: la actividad "
+                     << actividad.id_Actividad
+                     << " depende del ID "
+                     << dependencia
+                     << ", pero ese ID no existe."
+                     << endl;
+
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 void inicializarPipe(Actividad& tarea) {
     if (pipe(tarea.pipe_fd) == -1) {
         exit(EXIT_FAILURE);
@@ -242,13 +272,18 @@ int main(int argc, char* argv[])
 
     if (!cargarPlan(nombreArchivo, lista_actividades))
     {
-        return 1;
+     return 1;
     }
 
     if (!validarIdsUnicos(lista_actividades))
-{
-    return 1;
-}
+    {
+     return 1;
+    }
+
+    if (!validarDependencias(lista_actividades))
+    {
+     return 1;
+    }
 
     cout << endl;
     cout << "Actividades cargadas: "
