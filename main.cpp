@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <unordered_set>
+#include <unordered_map>
+#include <queue>
 
 using namespace std;
 
@@ -228,6 +230,63 @@ bool validarDependencias(const vector<Actividad>& lista_actividades)
     return true;
 }
 
+bool validarSinCiclos(const vector<Actividad>& lista_actividades)
+{
+    unordered_map<string, int> dependenciasPendientes;
+    unordered_map<string, vector<string>> dependientes;
+
+    for (const Actividad& actividad : lista_actividades)
+    {
+        dependenciasPendientes[actividad.id_Actividad] =
+            actividad.dependencias.size();
+
+        for (const string& dependencia : actividad.dependencias)
+        {
+            dependientes[dependencia].push_back(actividad.id_Actividad);
+        }
+    }
+
+    queue<string> actividadesDisponibles;
+
+    for (const Actividad& actividad : lista_actividades)
+    {
+        if (dependenciasPendientes[actividad.id_Actividad] == 0)
+        {
+            actividadesDisponibles.push(actividad.id_Actividad);
+        }
+    }
+
+    int actividadesProcesadas = 0;
+
+    while (!actividadesDisponibles.empty())
+    {
+        string idActual = actividadesDisponibles.front();
+        actividadesDisponibles.pop();
+
+        actividadesProcesadas++;
+
+        for (const string& idDependiente : dependientes[idActual])
+        {
+            dependenciasPendientes[idDependiente]--;
+
+            if (dependenciasPendientes[idDependiente] == 0)
+            {
+                actividadesDisponibles.push(idDependiente);
+            }
+        }
+    }
+
+    if (actividadesProcesadas != static_cast<int>(lista_actividades.size()))
+    {
+        cerr << "Error: el plan contiene un ciclo y no representa un DAG."
+             << endl;
+
+        return false;
+    }
+
+    return true;
+}
+
 void inicializarPipe(Actividad& tarea) {
     if (pipe(tarea.pipe_fd) == -1) {
         exit(EXIT_FAILURE);
@@ -284,6 +343,11 @@ int main(int argc, char* argv[])
     {
      return 1;
     }
+
+    if (!validarSinCiclos(lista_actividades))
+{
+    return 1;
+}
 
     cout << endl;
     cout << "Actividades cargadas: "
