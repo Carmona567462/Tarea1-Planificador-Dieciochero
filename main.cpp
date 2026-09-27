@@ -7,6 +7,7 @@
 #include <random>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <unordered_set>
 
 using namespace std;
 
@@ -157,6 +158,8 @@ bool cargarPlan(const string& nombreArchivo, vector<Actividad>& lista_actividade
                     actividad.dependencias.push_back(dependencia);
                 }
             }
+
+
         }
 
         actividad.pipe_fd[0] = -1;
@@ -165,9 +168,32 @@ bool cargarPlan(const string& nombreArchivo, vector<Actividad>& lista_actividade
         actividad.completada = false;
 
         lista_actividades.push_back(actividad);
+
     }
 
     archivo.close();
+
+    return true;
+}
+
+bool validarIdsUnicos(const vector<Actividad>& lista_actividades)
+{
+    unordered_set<string> idsEncontrados;
+
+    for (const Actividad& actividad : lista_actividades)
+    {
+        if (idsEncontrados.find(actividad.id_Actividad) != idsEncontrados.end())
+        {
+
+            cerr << "Error: el ID " << actividad.id_Actividad
+                 << " esta repetido." << endl;
+
+            return false;
+        }
+
+        idsEncontrados.insert(actividad.id_Actividad);
+
+    }
 
     return true;
 }
@@ -219,6 +245,11 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    if (!validarIdsUnicos(lista_actividades))
+{
+    return 1;
+}
+
     cout << endl;
     cout << "Actividades cargadas: "
          << lista_actividades.size() << endl;
@@ -230,7 +261,7 @@ int main(int argc, char* argv[])
         cout << "Nombre: " << actividad.nombre_Actividad << endl;
         cout << "Tiempo: " << actividad.tiempo << " ms" << endl;
 
-        cout << "dependencias: ";
+        cout << "Dependencias: ";
 
         if (actividad.dependencias.empty())
         {
