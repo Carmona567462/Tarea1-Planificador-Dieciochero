@@ -286,6 +286,46 @@ bool validarSinCiclos(const vector<Actividad>& lista_actividades)
 
     return true;
 }
+ pid_t crearProcesoActividad(Actividad& actividad)
+{
+    pid_t pid = fork();
+
+    if (pid < 0)
+    {
+        cerr << "Error: no se pudo crear el proceso para la actividad "
+             << actividad.id_Actividad << endl;
+
+        return -1;
+    }
+
+    if (pid == 0)
+    {
+        cout << "[Hijo] Iniciando actividad "
+             << actividad.id_Actividad
+             << " - "
+             << actividad.nombre_Actividad
+             << endl;
+
+        usleep(actividad.tiempo * 1000);
+
+        cout << "[Hijo] Actividad "
+             << actividad.id_Actividad
+             << " terminada."
+             << endl;
+
+        _exit(EXIT_SUCCESS);
+    }
+
+    actividad.pid_hijo = pid;
+
+    cout << "[Padre] Se creo el proceso "
+         << pid
+         << " para la actividad "
+         << actividad.id_Actividad
+         << endl;
+
+    return pid;
+}
 
 void inicializarPipe(Actividad& tarea) {
     if (pipe(tarea.pipe_fd) == -1) {
@@ -345,9 +385,10 @@ int main(int argc, char* argv[])
     }
 
     if (!validarSinCiclos(lista_actividades))
-{
-    return 1;
-}
+    {
+     return 1;
+    }
+    
 
     cout << endl;
     cout << "Actividades cargadas: "
@@ -377,5 +418,29 @@ int main(int argc, char* argv[])
         cout << endl;
     }
 
+    if (!lista_actividades.empty())
+    {
+    cout << endl;
+    cout << "Probando ejecucion de la primera actividad..." << endl;
+
+    pid_t pid = crearProcesoActividad(lista_actividades[0]);
+
+     if (pid == -1)
+    {
+        return 1;
+    }
+
+    int estado;
+
+     if (waitpid(pid, &estado, 0) == -1)
+    {
+        cerr << "Error al esperar el proceso hijo." << endl;
+        return 1;
+    }
+
+     cout << "[Padre] El proceso hijo termino." << endl;
+    }
+
+    
     return 0;
 }
