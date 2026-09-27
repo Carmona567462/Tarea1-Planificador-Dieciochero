@@ -351,6 +351,142 @@ void recibirInsumo(Actividad& tarea_dependencia) {
     close(tarea_dependencia.pipe_fd[0]); 
 }
 
+bool dependenciasCompletadas(
+    const Actividad& actividad,
+    const vector<Actividad>& lista_actividades)
+{
+    for (const string& dependencia : actividad.dependencias)
+    {
+        bool encontrada = false;
+
+        for (const Actividad& otraActividad : lista_actividades)
+        {
+            if (otraActividad.id_Actividad == dependencia)
+            {
+                encontrada = true;
+
+                if (!otraActividad.completada)
+                {
+                    return false;
+                }
+
+                break;
+            }
+        }
+
+        if (!encontrada)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+int buscarActividadPorPid(
+    const vector<Actividad>& lista_actividades,
+    pid_t pid)
+{
+    for (size_t i = 0; i < lista_actividades.size(); i++)
+    {
+        if (lista_actividades[i].pid_hijo == pid)
+        {
+            return static_cast<int>(i);
+        }
+    }
+
+    return -1;
+}
+
+bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
+{
+    int procesos_activos = 0;
+    int tareas_completadas = 0;
+    int total_tareas = static_cast<int>(lista_actividades.size());
+
+    while (tareas_completadas < total_tareas)
+    {
+        for (Actividad& actividad : lista_actividades)
+        {
+            if (procesos_activos >= k)
+            {
+                break;
+            }
+
+            bool noIniciada = (actividad.pid_hijo == -1);
+
+            if (noIniciada &&
+                !actividad.completada &&
+                dependenciasCompletadas(actividad, lista_actividades))
+            {
+                pid_t pid = crearProcesoActividad(actividad);
+
+                if (pid == -1)
+                {
+                    cerr << "Error al crear un proceso." << endl;
+                    return false;
+                }
+
+                procesos_activos++;
+            }
+        }
+
+        if (procesos_activos == 0)
+        {
+            cerr << "Error: no hay actividades disponibles para ejecutar."
+                 << endl;
+
+            return false;
+        }
+
+        int estado;
+
+        pid_t pidTerminado = waitpid(-1, &estado, 0);
+
+        if (pidTerminado == -1)
+        {
+            cerr << "Error al esperar un proceso hijo." << endl;
+            return false;
+        }
+
+        procesos_activos--;
+
+        int posicion =
+            buscarActividadPorPid(lista_actividades, pidTerminado);
+
+        if (posicion == -1)
+        {
+            cerr << "Error: no se encontro la actividad del proceso "
+                 << pidTerminado << endl;
+
+            return false;
+        }
+
+        if (WIFEXITED(estado) &&
+            WEXITSTATUS(estado) == EXIT_SUCCESS)
+        {
+            lista_actividades[posicion].completada = true;
+            tareas_completadas++;
+
+            cout << "[Padre] Actividad "
+                 << lista_actividades[posicion].id_Actividad
+                 << " completada."
+                 << endl;
+        }
+        else
+        {
+            cerr << "[Padre] La actividad "
+                 << lista_actividades[posicion].id_Actividad
+                 << " termino con error."
+                 << endl;
+
+            return false;
+        }
+    }
+
+    return true;
+}
+
 int main(int argc, char* argv[])
 {
     if (argc != 3)
@@ -362,8 +498,24 @@ int main(int argc, char* argv[])
     }
 
     string nombreArchivo = argv[1];
-    int k = stoi(argv[2]);
 
+   int k;
+
+   try
+    {
+    k = stoi(argv[2]);
+    }
+    catch (...)
+    {
+    cerr << "Error: K debe ser un numero entero." << endl;
+    return 1;
+    }
+
+    if (k <= 0)
+    {
+    cerr << "Error: K debe ser mayor que 0." << endl;
+    return 1;
+    }
     cout << "Archivo que se va a leer: " << nombreArchivo << endl;
     cout << "Con el límite de concurrencia: " << k << endl;
 
@@ -417,30 +569,17 @@ int main(int argc, char* argv[])
 
         cout << endl;
     }
+   cout << endl;
+   cout << "[Planificador] Iniciando ejecucion del plan..." << endl;
 
-    if (!lista_actividades.empty())
+    if (!ejecutarPlan(lista_actividades, k))
     {
+    return 1;
+    }
+
     cout << endl;
-    cout << "Probando ejecucion de la primera actividad..." << endl;
+    cout << "[Planificador] Todas las actividades fueron completadas."
+     << endl;
 
-    pid_t pid = crearProcesoActividad(lista_actividades[0]);
-
-     if (pid == -1)
-    {
-        return 1;
-    }
-
-    int estado;
-
-     if (waitpid(pid, &estado, 0) == -1)
-    {
-        cerr << "Error al esperar el proceso hijo." << endl;
-        return 1;
-    }
-
-     cout << "[Padre] El proceso hijo termino." << endl;
-    }
-
-    
-    return 0;
+     return 0;
 }
