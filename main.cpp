@@ -12,7 +12,6 @@
 #include <queue>
 
 using namespace std;
-
 struct Actividad
 {
     string id_Actividad;
@@ -327,28 +326,44 @@ bool validarSinCiclos(const vector<Actividad>& lista_actividades)
     return pid;
 }
 
-void inicializarPipe(Actividad& tarea) {
-    if (pipe(tarea.pipe_fd) == -1) {
-        exit(EXIT_FAILURE);
+bool inicializarPipe(Actividad& actividad)
+{
+    if (pipe(actividad.pipe_fd) == -1)
+    {
+        cerr << "Error: no se pudo crear el pipe para la actividad " << actividad.id_Actividad << endl;
+                return false;
     }
+    return true;
 }
 
-void propagarMensaje(Actividad& tarea_finalizada) {
-    close(tarea_finalizada.pipe_fd[0]); 
-    
-    string msg = "Insumo completado: " + tarea_finalizada.nombre_Actividad;
-    write(tarea_finalizada.pipe_fd[1], msg.c_str(), msg.length() + 1);
-    
-    close(tarea_finalizada.pipe_fd[1]); 
+bool propagarMensaje(Actividad& actividad)
+{
+    string mensaje = "Insumo completado: " + actividad.id_Actividad + " .- " + actividad.nombre_Actividad;
+    if(mensaje.size() > 255)
+    {
+        mensaje.resize(255);
+    }
+    ssize_t bytesEscritos = write(actividad.pipe_fd[1], mensaje.c_str(), mensaje.size() +1);
+    if (bytesEscritos == -1)
+    {
+        cerr << "Error: no se pudo enviar el mensaje de la actividad " << actividad.id_Actividad << endl;
+        return false;
+    }
+    return true;
 }
+string recibirInsumo(Actividad& actividad)
+{
+    char buffer[256] = {};
+    ssize_t bytesLeidos = read(actividad.pipe_fd[0], buffer, sizeof(buffer) -1);
+    close(actividad.pipe_fd[0]);
+    actividad.pipe_fd[0] = -1;
+    if (bytesLeidos <= 0)
+    {
+        return "";
+    }
+    buffer[bytesLeidos] = '\0';
+    return string(buffer);
 
-void recibirInsumo(Actividad& tarea_dependencia) {
-    close(tarea_dependencia.pipe_fd[1]); 
-    
-    char buffer[256];
-    read(tarea_dependencia.pipe_fd[0], buffer, sizeof(buffer));
-    
-    close(tarea_dependencia.pipe_fd[0]); 
 }
 
 bool dependenciasCompletadas(
