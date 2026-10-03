@@ -25,6 +25,8 @@ struct Actividad
 
     pid_t pid_hijo = -1;
     bool completada = false;
+    bool fallida = false;
+    bool bloqueada = false;
 };
 
 string limpiarEspacios(const string& texto)
@@ -599,6 +601,47 @@ void cerrarPipesEntrada(vector<Actividad>& lista_actividades)
             actividad.pipe_entrada[1] = -1;
         }
     }
+}
+
+int bloquearDependientes(
+    const string& idFallido,
+    vector<Actividad>& lista_actividades)
+{
+    int cantidadBloqueadas = 0;
+
+    for (Actividad& actividad : lista_actividades)
+    {
+        if (actividad.bloqueada ||
+            actividad.fallida ||
+            actividad.completada)
+        {
+            continue;
+        }
+
+        for (const string& dependencia : actividad.dependencias)
+        {
+            if (dependencia == idFallido)
+            {
+                actividad.bloqueada = true;
+                cantidadBloqueadas++;
+
+                cout << "[ERROR]  Actividad "
+                     << actividad.id_Actividad
+                     << " - bloqueada por fallo de actividad "
+                     << idFallido
+                     << endl;
+
+                cantidadBloqueadas +=
+                    bloquearDependientes(
+                        actividad.id_Actividad,
+                        lista_actividades);
+
+                break;
+            }
+        }
+    }
+
+    return cantidadBloqueadas;
 }
 
 bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
