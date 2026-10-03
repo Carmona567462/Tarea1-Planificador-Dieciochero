@@ -374,20 +374,19 @@ pid_t crearProcesoActividad(Actividad& actividad)
 
     if (pid == 0)
     {
-        // El hijo solamente escribe en el pipe.
         close(actividad.pipe_fd[0]);
 
-        cout << "[Hijo] Iniciando actividad "
+        cout << "[HIJO ] Actividad "
              << actividad.id_Actividad
-             << " - "
+             << " -iniciada "
              << actividad.nombre_Actividad
              << endl;
 
         usleep(actividad.tiempo * 1000);
 
-        cout << "[Hijo] Actividad "
+        cout << "[HIJO ] Actividad "
              << actividad.id_Actividad
-             << " terminada."
+             << " -terminada."
              << endl;
 
         if (!propagarMensaje(actividad))
@@ -401,16 +400,17 @@ pid_t crearProcesoActividad(Actividad& actividad)
         _exit(EXIT_SUCCESS);
     }
 
-    // El padre solamente lee del pipe.
+
     close(actividad.pipe_fd[1]);
     actividad.pipe_fd[1] = -1;
 
     actividad.pid_hijo = pid;
 
-    cout << "[Padre] Se creo el proceso "
-         << pid
-         << " para la actividad "
+    cout << "[PADRE] Actividad "
          << actividad.id_Actividad
+         << " -proceso "
+         << pid
+         << " creado "
          << endl;
 
     return pid;
@@ -475,10 +475,11 @@ void guardarInsumoEnDependientes(
             {
                 actividad.insumos.push_back(mensaje);
 
-                cout << "[PIPE] Insumo de la actividad "
+                cout << "[PIPE ] Actividad "
                      << actividad_finalizada.id_Actividad
-                     << " preparado para la actividad "
+                     << " -> Actividad "
                      << actividad.id_Actividad
+                     << " -insumo listo "
                      << endl;
 
                 break;
@@ -554,7 +555,7 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
           WEXITSTATUS(estado) == EXIT_SUCCESS)
         {
         string mensaje =
-        recibirInsumo(lista_actividades[posicion]);
+       recibirInsumo(lista_actividades[posicion]);
 
         if (mensaje.empty())
         {
@@ -565,26 +566,26 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
              return false;
        }
 
-           cout << "[PIPE] Mensaje recibido: "
+           cout << "[PIPE ] Actividad "
+                << lista_actividades[posicion].id_Actividad
+                << " -mensaje recibido "
                 << mensaje
                 << endl;
 
-        guardarInsumoEnDependientes(
-              lista_actividades[posicion],
-              mensaje,
-              lista_actividades);
+        guardarInsumoEnDependientes(lista_actividades[posicion],mensaje,lista_actividades);
 
          lista_actividades[posicion].completada = true;
          tareas_completadas++;
 
-           cout << "[Padre] Actividad "
+           cout << "[PADRE ] Actividad "
                 << lista_actividades[posicion].id_Actividad
-                << " completada."
+                << " -completada "
+                << endl
                 << endl;
 }
          else
          {
-            cerr << "[Padre] La actividad "
+            cerr << "[PADRE ] Actividad "
                  << lista_actividades[posicion].id_Actividad
                  << " termino con error."
                  << endl;
