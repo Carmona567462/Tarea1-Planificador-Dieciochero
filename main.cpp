@@ -285,8 +285,77 @@ bool validarSinCiclos(const vector<Actividad>& lista_actividades)
 
     return true;
 }
- pid_t crearProcesoActividad(Actividad& actividad)
+
+bool inicializarPipe(Actividad& actividad)
 {
+    if (pipe(actividad.pipe_fd) == -1)
+    {
+        cerr << "Error: no se pudo crear el pipe para la actividad "
+             << actividad.id_Actividad << endl;
+
+        return false;
+    }
+
+    return true;
+}
+
+bool propagarMensaje(Actividad& actividad)
+{
+    string mensaje = "Insumo completado: "
+                   + actividad.id_Actividad
+                   + " .- "
+                   + actividad.nombre_Actividad;
+
+    if (mensaje.size() > 255)
+    {
+        mensaje.resize(255);
+    }
+
+    ssize_t bytesEscritos =
+        write(actividad.pipe_fd[1],
+              mensaje.c_str(),
+              mensaje.size() + 1);
+
+    if (bytesEscritos == -1)
+    {
+        cerr << "Error: no se pudo enviar el mensaje de la actividad "
+             << actividad.id_Actividad << endl;
+
+        return false;
+    }
+
+    return true;
+} 
+
+string recibirInsumo(Actividad& actividad)
+{
+    char buffer[256] = {};
+
+    ssize_t bytesLeidos =
+        read(actividad.pipe_fd[0],
+             buffer,
+             sizeof(buffer) - 1);
+
+    close(actividad.pipe_fd[0]);
+    actividad.pipe_fd[0] = -1;
+
+    if (bytesLeidos <= 0)
+    {
+        return "";
+    }
+
+    buffer[bytesLeidos] = '\0';
+
+    return string(buffer);
+}
+
+pid_t crearProcesoActividad(Actividad& actividad)
+{
+    if (!inicializarPipe(actividad))
+    {
+        return -1;
+    }
+
     pid_t pid = fork();
 
     if (pid < 0)
@@ -294,11 +363,20 @@ bool validarSinCiclos(const vector<Actividad>& lista_actividades)
         cerr << "Error: no se pudo crear el proceso para la actividad "
              << actividad.id_Actividad << endl;
 
+        close(actividad.pipe_fd[0]);
+        close(actividad.pipe_fd[1]);
+
+        actividad.pipe_fd[0] = -1;
+        actividad.pipe_fd[1] = -1;
+
         return -1;
     }
 
     if (pid == 0)
     {
+        // El hijo solamente escribe en el pipe.
+        close(actividad.pipe_fd[0]);
+
         cout << "[Hijo] Iniciando actividad "
              << actividad.id_Actividad
              << " - "
@@ -312,8 +390,20 @@ bool validarSinCiclos(const vector<Actividad>& lista_actividades)
              << " terminada."
              << endl;
 
+        if (!propagarMensaje(actividad))
+        {
+            close(actividad.pipe_fd[1]);
+            _exit(EXIT_FAILURE);
+        }
+
+        close(actividad.pipe_fd[1]);
+
         _exit(EXIT_SUCCESS);
     }
+
+    // El padre solamente lee del pipe.
+    close(actividad.pipe_fd[1]);
+    actividad.pipe_fd[1] = -1;
 
     actividad.pid_hijo = pid;
 
@@ -325,47 +415,6 @@ bool validarSinCiclos(const vector<Actividad>& lista_actividades)
 
     return pid;
 }
-
-bool inicializarPipe(Actividad& actividad)
-{
-    if (pipe(actividad.pipe_fd) == -1)
-    {
-        cerr << "Error: no se pudo crear el pipe para la actividad " << actividad.id_Actividad << endl;
-                return false;
-    }
-    return true;
-}
-
-bool propagarMensaje(Actividad& actividad)
-{
-    string mensaje = "Insumo completado: " + actividad.id_Actividad + " .- " + actividad.nombre_Actividad;
-    if(mensaje.size() > 255)
-    {
-        mensaje.resize(255);
-    }
-    ssize_t bytesEscritos = write(actividad.pipe_fd[1], mensaje.c_str(), mensaje.size() +1);
-    if (bytesEscritos == -1)
-    {
-        cerr << "Error: no se pudo enviar el mensaje de la actividad " << actividad.id_Actividad << endl;
-        return false;
-    }
-    return true;
-}
-string recibirInsumo(Actividad& actividad)
-{
-    char buffer[256] = {};
-    ssize_t bytesLeidos = read(actividad.pipe_fd[0], buffer, sizeof(buffer) -1);
-    close(actividad.pipe_fd[0]);
-    actividad.pipe_fd[0] = -1;
-    if (bytesLeidos <= 0)
-    {
-        return "";
-    }
-    buffer[bytesLeidos] = '\0';
-    return string(buffer);
-
-}
-
 bool dependenciasCompletadas(
     const Actividad& actividad,
     const vector<Actividad>& lista_actividades)
@@ -476,20 +525,35 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
 
             return false;
         }
-
         if (WIFEXITED(estado) &&
-            WEXITSTATUS(estado) == EXIT_SUCCESS)
+          WEXITSTATUS(estado) == EXIT_SUCCESS)
         {
-            lista_actividades[posicion].completada = true;
-            tareas_completadas++;
+        string mensaje =
+        recibirInsumo(lista_actividades[posicion]);
 
-            cout << "[Padre] Actividad "
-                 << lista_actividades[posicion].id_Actividad
-                 << " completada."
-                 << endl;
-        }
-        else
+        if (mensaje.empty())
         {
+            cerr << "Error: no se recibio el mensaje de la actividad "
+                 << lista_actividades[posicion].id_Actividad
+                 << endl;
+
+             return false;
+       }
+
+           cout << "[PIPE] Mensaje recibido: "
+                << mensaje
+                << endl;
+
+         lista_actividades[posicion].completada = true;
+         tareas_completadas++;
+
+           cout << "[Padre] Actividad "
+                << lista_actividades[posicion].id_Actividad
+                << " completada."
+                << endl;
+}
+         else
+         {
             cerr << "[Padre] La actividad "
                  << lista_actividades[posicion].id_Actividad
                  << " termino con error."
