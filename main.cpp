@@ -18,7 +18,7 @@ struct Actividad
     string nombre_Actividad;
     int tiempo;
     vector<string> dependencias;
-
+    vector<string> insumos;
     int pipe_fd[2];
     pid_t pid_hijo = -1;
     bool completada = false;
@@ -462,6 +462,31 @@ int buscarActividadPorPid(
     return -1;
 }
 
+void guardarInsumoEnDependientes(
+    const Actividad& actividad_finalizada,
+    const string& mensaje,
+    vector<Actividad>& lista_actividades)
+{
+    for (Actividad& actividad : lista_actividades)
+    {
+        for (const string& dependencia : actividad.dependencias)
+        {
+            if (dependencia == actividad_finalizada.id_Actividad)
+            {
+                actividad.insumos.push_back(mensaje);
+
+                cout << "[PIPE] Insumo de la actividad "
+                     << actividad_finalizada.id_Actividad
+                     << " preparado para la actividad "
+                     << actividad.id_Actividad
+                     << endl;
+
+                break;
+            }
+        }
+    }
+}
+
 bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
 {
     int procesos_activos = 0;
@@ -543,6 +568,11 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
            cout << "[PIPE] Mensaje recibido: "
                 << mensaje
                 << endl;
+
+        guardarInsumoEnDependientes(
+              lista_actividades[posicion],
+              mensaje,
+              lista_actividades);
 
          lista_actividades[posicion].completada = true;
          tareas_completadas++;
