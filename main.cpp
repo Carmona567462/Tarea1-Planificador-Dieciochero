@@ -19,7 +19,10 @@ struct Actividad
     int tiempo;
     vector<string> dependencias;
     vector<string> insumos;
+
     int pipe_fd[2];
+    int pipe_entrada[2] = {-1, -1};
+
     pid_t pid_hijo = -1;
     bool completada = false;
 };
@@ -488,6 +491,41 @@ void guardarInsumoEnDependientes(
     }
 }
 
+bool inicializarPipesEntrada(vector<Actividad>& lista_actividades)
+{
+    for (Actividad& actividad : lista_actividades)
+    {
+        if (pipe(actividad.pipe_entrada) == -1)
+        {
+            cerr << "Error: no se pudo crear el pipe de entrada para la actividad "
+                 << actividad.id_Actividad
+                 << endl;
+
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void cerrarPipesEntrada(vector<Actividad>& lista_actividades)
+{
+    for (Actividad& actividad : lista_actividades)
+    {
+        if (actividad.pipe_entrada[0] != -1)
+        {
+            close(actividad.pipe_entrada[0]);
+            actividad.pipe_entrada[0] = -1;
+        }
+
+        if (actividad.pipe_entrada[1] != -1)
+        {
+            close(actividad.pipe_entrada[1]);
+            actividad.pipe_entrada[1] = -1;
+        }
+    }
+}
+
 bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
 {
     int procesos_activos = 0;
@@ -650,7 +688,10 @@ int main(int argc, char* argv[])
     {
      return 1;
     }
-    
+    if (!inicializarPipesEntrada(lista_actividades))
+    {
+    return 1;
+    } 
 
     cout << endl;
     cout << "Actividades cargadas: "
@@ -684,6 +725,7 @@ int main(int argc, char* argv[])
 
     if (!ejecutarPlan(lista_actividades, k))
     {
+    cerrarPipesEntrada(lista_actividades);
     return 1;
     }
 
@@ -691,5 +733,6 @@ int main(int argc, char* argv[])
     cout << "[Planificador] Todas las actividades fueron completadas."
      << endl;
 
+     cerrarPipesEntrada(lista_actividades);
      return 0;
 }
