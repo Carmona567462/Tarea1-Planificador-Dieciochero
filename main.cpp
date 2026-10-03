@@ -647,10 +647,10 @@ int bloquearDependientes(
 bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
 {
     int procesos_activos = 0;
-    int tareas_completadas = 0;
+    int tareas_resueltas = 0;
     int total_tareas = static_cast<int>(lista_actividades.size());
 
-    while (tareas_completadas < total_tareas)
+    while (tareas_resueltas < total_tareas)
     {
         for (Actividad& actividad : lista_actividades)
         {
@@ -662,7 +662,7 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
             bool noIniciada = (actividad.pid_hijo == -1);
 
             if (noIniciada &&
-                !actividad.completada &&
+                !actividad.completada && !actividad.fallida && !actividad.bloqueada &&
                 dependenciasCompletadas(actividad, lista_actividades))
             {
                 pid_t pid = crearProcesoActividad(actividad);
@@ -734,7 +734,7 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
         }
 
          lista_actividades[posicion].completada = true;
-         tareas_completadas++;
+         tareas_resueltas++;
 
            cout << "[PADRE ] Actividad "
                 << lista_actividades[posicion].id_Actividad
@@ -742,15 +742,35 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
                 << endl
                 << endl;
 }
-         else
-         {
-            cerr << "[PADRE ] Actividad "
-                 << lista_actividades[posicion].id_Actividad
-                 << " termino con error."
-                 << endl;
+        else
+{
+    lista_actividades[posicion].fallida = true;
+    tareas_resueltas++;
 
-            return false;
-        }
+    cerr << "[ERROR ]  Actividad "
+         << lista_actividades[posicion].id_Actividad
+         << " -fallo durante la ejecucion"
+         << endl;
+
+    if (lista_actividades[posicion].pipe_fd[0] != -1)
+    {
+        close(lista_actividades[posicion].pipe_fd[0]);
+        lista_actividades[posicion].pipe_fd[0] = -1;
+    }
+
+    int cantidadBloqueadas =
+        bloquearDependientes(
+            lista_actividades[posicion].id_Actividad,
+            lista_actividades);
+
+    tareas_resueltas += cantidadBloqueadas;
+
+    cout << "[PLANIFICADOR ] Rama de la actividad "
+         << lista_actividades[posicion].id_Actividad
+         << " -cancelada"
+         << endl
+         << endl;
+}
     }
 
     return true;
