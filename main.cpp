@@ -465,7 +465,7 @@ int buscarActividadPorPid(
     return -1;
 }
 
-void guardarInsumoEnDependientes(
+bool guardarInsumoEnDependientes(
     const Actividad& actividad_finalizada,
     const string& mensaje,
     vector<Actividad>& lista_actividades)
@@ -478,17 +478,51 @@ void guardarInsumoEnDependientes(
             {
                 actividad.insumos.push_back(mensaje);
 
-                cout << "[PIPE ] Actividad "
+                char buffer[256] = {};
+
+                string mensajeEnviar = mensaje;
+
+                if (mensajeEnviar.size() > 255)
+                {
+                    mensajeEnviar.resize(255);
+                }
+
+                snprintf(
+                    buffer,
+                    sizeof(buffer),
+                    "%s",
+                    mensajeEnviar.c_str());
+
+                ssize_t bytesEscritos =
+                    write(
+                        actividad.pipe_entrada[1],
+                        buffer,
+                        sizeof(buffer));
+
+                if (bytesEscritos == -1)
+                {
+                    cerr << "Error: no se pudo enviar el mensaje de la actividad "
+                         << actividad_finalizada.id_Actividad
+                         << " a la actividad "
+                         << actividad.id_Actividad
+                         << endl;
+
+                    return false;
+                }
+
+                cout << "[PIPE ]  Actividad "
                      << actividad_finalizada.id_Actividad
                      << " -> Actividad "
                      << actividad.id_Actividad
-                     << " -insumo listo "
+                     << " - mensaje enviado"
                      << endl;
 
                 break;
             }
         }
     }
+
+    return true;
 }
 
 bool inicializarPipesEntrada(vector<Actividad>& lista_actividades)
@@ -610,7 +644,10 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
                 << mensaje
                 << endl;
 
-        guardarInsumoEnDependientes(lista_actividades[posicion],mensaje,lista_actividades);
+        if (!guardarInsumoEnDependientes(lista_actividades[posicion],mensaje,lista_actividades))
+        {
+             return false;
+        }
 
          lista_actividades[posicion].completada = true;
          tareas_completadas++;
