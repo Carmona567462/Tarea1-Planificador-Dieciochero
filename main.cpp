@@ -364,7 +364,8 @@ pid_t crearProcesoActividad(Actividad& actividad)
     if (pid < 0)
     {
         cerr << "Error: no se pudo crear el proceso para la actividad "
-             << actividad.id_Actividad << endl;
+             << actividad.id_Actividad
+             << endl;
 
         close(actividad.pipe_fd[0]);
         close(actividad.pipe_fd[1]);
@@ -379,22 +380,62 @@ pid_t crearProcesoActividad(Actividad& actividad)
     {
         close(actividad.pipe_fd[0]);
 
-        cout << "[HIJO ] Actividad "
+        if (actividad.pipe_entrada[1] != -1)
+        {
+            close(actividad.pipe_entrada[1]);
+        }
+
+        for (size_t i = 0; i < actividad.dependencias.size(); i++)
+        {
+            char buffer[256] = {};
+
+            ssize_t bytesLeidos =
+                read(
+                    actividad.pipe_entrada[0],
+                    buffer,
+                    sizeof(buffer));
+
+            if (bytesLeidos <= 0)
+            {
+                cerr << "[PIPE ]  Actividad "
+                     << actividad.id_Actividad
+                     << " - error al recibir insumo"
+                     << endl;
+
+                close(actividad.pipe_fd[1]);
+
+                _exit(EXIT_FAILURE);
+            }
+
+            cout << "[PIPE ]  Actividad "
+                 << actividad.id_Actividad
+                 << " - recibio: "
+                 << buffer
+                 << endl;
+        }
+
+        if (actividad.pipe_entrada[0] != -1)
+        {
+            close(actividad.pipe_entrada[0]);
+        }
+
+        cout << "[HIJO ]  Actividad "
              << actividad.id_Actividad
-             << " -iniciada "
+             << " - iniciada - "
              << actividad.nombre_Actividad
              << endl;
 
         usleep(actividad.tiempo * 1000);
 
-        cout << "[HIJO ] Actividad "
+        cout << "[HIJO ]  Actividad "
              << actividad.id_Actividad
-             << " -terminada."
+             << " - terminada"
              << endl;
 
         if (!propagarMensaje(actividad))
         {
             close(actividad.pipe_fd[1]);
+
             _exit(EXIT_FAILURE);
         }
 
@@ -403,21 +444,21 @@ pid_t crearProcesoActividad(Actividad& actividad)
         _exit(EXIT_SUCCESS);
     }
 
-
     close(actividad.pipe_fd[1]);
     actividad.pipe_fd[1] = -1;
 
     actividad.pid_hijo = pid;
 
-    cout << "[PADRE] Actividad "
+    cout << "[PADRE]  Actividad "
          << actividad.id_Actividad
-         << " -proceso "
+         << " - proceso "
          << pid
-         << " creado "
+         << " creado"
          << endl;
 
     return pid;
 }
+
 bool dependenciasCompletadas(
     const Actividad& actividad,
     const vector<Actividad>& lista_actividades)
