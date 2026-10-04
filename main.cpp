@@ -782,6 +782,7 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
             if (pid == -1)
             {
                 cerr << "Error al crear un proceso." << endl;
+                abortarProcesosActivos(lista_actividades);
                 return false;
             }
             posicionPorPid[pid] = posicion;
@@ -818,6 +819,7 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
             }
 
             cerr << "Error al esperar un proceso hijo." << endl;
+            abortarProcesosActivos(lista_actividades);
             return false;
         }
 
@@ -828,6 +830,7 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
         if(encontrado == posicionPorPid.end())
         {
             cerr << "Error: no se encontro la actividad del proceso " << pidTerminado << endl;
+            abortarProcesosActivos(lista_actividades);
             return false;
         }
         int posicion = encontrado->second;
@@ -841,6 +844,7 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
             if(mensaje.empty())
             {
                 cerr << "Error: no se recibio el mensaje de la actividad " << actividad.id_Actividad << endl;
+                abortarProcesosActivos(lista_actividades);
                 return false;
             }
 
@@ -848,6 +852,7 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
 
             if (!guardarInsumoEnDependientes(actividad, mensaje, lista_actividades, dependientes[posicion]))
             {
+                abortarProcesosActivos(lista_actividades);
                 return false;
             }
             actividad.completada = true;
