@@ -930,6 +930,11 @@ int main(int argc, char* argv[])
     return 1;
     }
 
+    if (!configurarSigint())
+{
+    return 1;
+}
+
     cout << "Archivo que se va a leer: " << nombreArchivo << endl;
     cout << "Con el límite de concurrencia: " << k << endl;
 
