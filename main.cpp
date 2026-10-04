@@ -991,10 +991,42 @@ int main(int argc, char* argv[])
     return 1;
     }
 
-    cout << endl;
-    cout << "[Planificador] Todas las actividades fueron completadas."
-     << endl;
+    int completadas = 0;
+int fallidas = 0;
+int bloqueadas = 0;
 
-     cerrarPipesEntrada(lista_actividades);
-     return 0;
+for (const Actividad& actividad : lista_actividades)
+{
+    if (actividad.completada)
+    {
+        completadas++;
+    }
+    else if (actividad.fallida)
+    {
+        fallidas++;
+    }
+    else if (actividad.bloqueada)
+    {
+        bloqueadas++;
+    }
+}
+
+cout << "========================================" << endl;
+
+if (fallidas == 0 && bloqueadas == 0)
+{
+    cout << "[PLANIFICADOR] Todas las actividades fueron completadas."
+         << endl;
+}
+else
+{
+    cout << "[PLANIFICADOR] Ejecucion del plan finalizada." << endl;
+    cout << "Completadas: " << completadas << endl;
+    cout << "Fallidas: " << fallidas << endl;
+    cout << "Bloqueadas: " << bloqueadas << endl;
+}
+
+cerrarPipesEntrada(lista_actividades);
+
+return 0;
 }
