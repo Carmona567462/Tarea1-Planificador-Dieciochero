@@ -906,26 +906,28 @@ int main(int argc, char* argv[])
     string nombreArchivo = argv[1];
 
    int k;
+   size_t posicion;
 
-   try
+    try
     {
-    k = stoi(argv[2]);
+    k = stoi(argv[2], &posicion);
+
+     if (posicion != string(argv[2]).size())
+     {
+        cerr << "Error: K debe ser un numero entero." << endl;
+        return 1;
+     }
     }
     catch (...)
     {
     cerr << "Error: K debe ser un numero entero." << endl;
     return 1;
-    }
+    } 
 
-    if (k <= 0)
+   if (k <= 0)
     {
     cerr << "Error: K debe ser mayor que 0." << endl;
     return 1;
-    }
-
-    if(!configurarSigint())
-    {
-        return 1;
     }
 
     cout << "Archivo que se va a leer: " << nombreArchivo << endl;
