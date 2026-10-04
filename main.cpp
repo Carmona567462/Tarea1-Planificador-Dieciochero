@@ -616,24 +616,20 @@ int buscarActividadPorPid(
     return -1;
 }
 
-bool guardarInsumoEnDependientes(
-    const Actividad& actividad_finalizada,
-    const string& mensaje,
-    vector<Actividad>& lista_actividades)
+bool guardarInsumoEnDependientes(const Actividad& actividad_finalizada,const string& mensaje, vector<Actividad>& lista_actividades, const vector<int>& posicionesDependientes)
 {
-    for (Actividad& actividad : lista_actividades)
-    {
-        for (const string& dependencia : actividad.dependencias)
+        for (int posicion : posicionesDependientes)
         {
-            if (dependencia == actividad_finalizada.id_Actividad)
-            {
-                actividad.insumos.push_back(mensaje);
+            Actividad& actividad = lista_actividades[posicion];
 
-                cout << "La actividad " << actividad.id_Actividad << " recibio un insumo desde la actividad " << actividad_finalizada.id_Actividad << endl;
-                break;
+            if (actividad.bloqueada || actividad.fallida)
+            {
+                continue;
             }
+            actividad.insumos.push_back(mensaje);
+
+            cout << "La actividad " << actividad.id_Actividad << " recibio un insumo desde la actividad " << actividad_finalizada.id_Actividad << endl;
         }
-    }
 
     return true;
 }
@@ -656,45 +652,42 @@ void cerrarPipesEntrada(vector<Actividad>& lista_actividades)
     }
 }
 
-int bloquearDependientes(
-    const string& idFallido,
-    vector<Actividad>& lista_actividades)
+int bloquearDependientes(int posicionFallida, vector<Actividad>& lista_actividades, const vector<vector<int>>& dependientes)
 {
     int cantidadBloqueadas = 0;
 
-    for (Actividad& actividad : lista_actividades)
+    queue<int> actividadesPorBloquear;
+
+    for (int posicion : dependientes[posicionFallida])
     {
-        if (actividad.bloqueada ||
-            actividad.fallida ||
-            actividad.completada)
+        actividadesPorBloquear.push(posicion);
+    }
+
+    while (!actividadesPorBloquear.empty())
+    {
+        int posicion = actividadesPorBloquear.front();
+        actividadesPorBloquear.pop();
+
+        Actividad& actividad = lista_actividades[posicion];
+
+        if (actividad.bloqueada || actividad.fallida || actividad.completada)
         {
             continue;
         }
 
-        for (const string& dependencia : actividad.dependencias)
+        actividad.bloqueada = true;
+        cantidadBloqueadas++;
+
+        cout << "[ERROR]  Actividad " << actividad.id_Actividad << " - bloqueada por fallo de una dependecia " << endl;
+
+        for (int posicionDependiente : dependientes[posicion])
         {
-            if (dependencia == idFallido)
-            {
-                actividad.bloqueada = true;
-                cantidadBloqueadas++;
-
-                cout << "[ERROR]  Actividad "
-                     << actividad.id_Actividad
-                     << " - bloqueada por fallo de actividad "
-                     << idFallido
-                     << endl;
-
-                cantidadBloqueadas +=
-                    bloquearDependientes(
-                        actividad.id_Actividad,
-                        lista_actividades);
-
-                break;
-            }
+            actividadesPorBloquear.push(posicionDependiente);
         }
     }
 
     return cantidadBloqueadas;
+    
 }
 
 void abortarProcesosActivos(vector<Actividad>& lista_actividades)
@@ -734,6 +727,37 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
     int tareas_resueltas = 0;
     int total_tareas = static_cast<int>(lista_actividades.size());
 
+    unordered_map<string, int> posicionPorId;
+
+    for (int i = 0; i <total_tareas; i++)
+    {
+        posicionPorId[lista_actividades[i].id_Actividad] = i;
+    }
+
+    vector<int> dependenciasPendientes(total_tareas, 0);
+    vector<vector<int>> dependientes(total_tareas);
+
+    for(int i = 0; i < total_tareas; i++)
+    {
+        dependenciasPendientes[i] = static_cast <int>(lista_actividades[i].dependencias.size());
+
+        for(const string& dependencia : lista_actividades[i].dependencias)
+        {
+            int posicionDependencia = posicionPorId[dependencia];
+            dependientes[posicionDependencia].push_back(i);
+        }
+    }
+    queue<int> actividadesDisponibles;
+
+    for(int i = 0; i < total_tareas; i++)
+    {
+        if (dependenciasPendientes[i] == 0)
+        {
+            actividadesDisponibles.push(i);
+        }
+    }
+    unordered_map<pid_t, int> posicionPorPid;
+
     while (tareas_resueltas < total_tareas)
     {
         if (interrupcionSolicitada)
@@ -741,57 +765,53 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
             abortarProcesosActivos(lista_actividades);
             return false;
         }
-        for (Actividad& actividad : lista_actividades)
+
+        while (procesos_activos < k && !actividadesDisponibles.empty())
         {
-            if (interrupcionSolicitada)
+            int posicion = actividadesDisponibles.front();
+            actividadesDisponibles.pop();
+            Actividad& actividad = lista_actividades[posicion];
+
+            if (actividad.completada || actividad.fallida || actividad.bloqueada)
             {
-                break;
+                continue;
             }
 
-            if (procesos_activos >= k)
+            pid_t pid = crearProcesoActividad(actividad);
+            
+            if (pid == -1)
             {
-                break;
+                cerr << "Error al crear un proceso." << endl;
+                return false;
             }
-
-            bool noIniciada = (actividad.pid_hijo == -1);
-
-            if (noIniciada &&
-                !actividad.completada && !actividad.fallida && !actividad.bloqueada &&
-                dependenciasCompletadas(actividad, lista_actividades))
-            {
-                pid_t pid = crearProcesoActividad(actividad);
-
-                if (pid == -1)
-                {
-                    cerr << "Error al crear un proceso." << endl;
-                    return false;
-                }
-
-                procesos_activos++;
-            }
+            posicionPorPid[pid] = posicion;
+            procesos_activos++;
         }
 
         if (interrupcionSolicitada)
         {
             abortarProcesosActivos(lista_actividades);
             return false;
+
         }
 
         if (procesos_activos == 0)
         {
-            cerr << "Error: no hay actividades disponibles para ejecutar."
-                 << endl;
+            if(tareas_resueltas == total_tareas)
+            {
+                break;
+            }
 
+            cerr << "Error: no hay actividades disponibles para ejecutar." << endl;
             return false;
         }
 
         int estado;
-
         pid_t pidTerminado = waitpid(-1, &estado, 0);
 
-        if (pidTerminado == -1)
+        if(pidTerminado == -1)
         {
-            if (interrupcionSolicitada)
+            if(interrupcionSolicitada)
             {
                 abortarProcesosActivos(lista_actividades);
                 return false;
@@ -803,82 +823,73 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
 
         procesos_activos--;
 
-        int posicion =
-            buscarActividadPorPid(lista_actividades, pidTerminado);
+        auto encontrado = posicionPorPid.find(pidTerminado);
 
-        if (posicion == -1)
+        if(encontrado == posicionPorPid.end())
         {
-            cerr << "Error: no se encontro la actividad del proceso "
-                 << pidTerminado << endl;
-
+            cerr << "Error: no se encontro la actividad del proceso " << pidTerminado << endl;
             return false;
         }
-        if (WIFEXITED(estado) &&
-          WEXITSTATUS(estado) == EXIT_SUCCESS)
+        int posicion = encontrado->second;
+        posicionPorPid.erase(encontrado);
+        Actividad& actividad = lista_actividades[posicion];
+
+        if(WIFEXITED(estado) && WEXITSTATUS(estado) == EXIT_SUCCESS)
         {
-        string mensaje =
-       recibirInsumo(lista_actividades[posicion]);
+            string mensaje = recibirInsumo(actividad);
 
-        if (mensaje.empty())
-        {
-            cerr << "Error: no se recibio el mensaje de la actividad "
-                 << lista_actividades[posicion].id_Actividad
-                 << endl;
+            if(mensaje.empty())
+            {
+                cerr << "Error: no se recibio el mensaje de la actividad " << actividad.id_Actividad << endl;
+                return false;
+            }
 
-             return false;
-       }
+            cout << "[PIPE] Actividad " << actividad.id_Actividad << " - mensaje recibido: " << mensaje << endl;
 
-           cout << "[PIPE ] Actividad "
-                << lista_actividades[posicion].id_Actividad
-                << " -mensaje recibido "
-                << mensaje
-                << endl;
+            if (!guardarInsumoEnDependientes(actividad, mensaje, lista_actividades, dependientes[posicion]))
+            {
+                return false;
+            }
+            actividad.completada = true;
+            tareas_resueltas++;
 
-        if (!guardarInsumoEnDependientes(lista_actividades[posicion],mensaje,lista_actividades))
-        {
-             return false;
+            for (int posicionDependiente : dependientes[posicion])
+            {
+                Actividad& actividadDependiente = lista_actividades[posicionDependiente];
+
+                if (actividadDependiente.bloqueada || actividadDependiente.fallida || actividadDependiente.completada)
+                {
+                    continue;
+                }
+
+                dependenciasPendientes[posicionDependiente]--;
+
+                if (dependenciasPendientes[posicionDependiente] == 0)
+                {
+                    actividadesDisponibles.push(posicionDependiente);
+                }
+            }
+            cout << "[PADRE] Actividad " << actividad.id_Actividad << " - completada" << endl << endl;
         }
+        else 
+        {
+            actividad.fallida = true;
+            tareas_resueltas++;
 
-         lista_actividades[posicion].completada = true;
-         tareas_resueltas++;
+            cerr << "[ERROR] Actividad " << actividad.id_Actividad << " - fallo durante la ejecucion" <<endl;
 
-           cout << "[PADRE ] Actividad "
-                << lista_actividades[posicion].id_Actividad
-                << " -completada "
-                << endl
-                << endl;
-}
-        else
-{
-    lista_actividades[posicion].fallida = true;
-    tareas_resueltas++;
+            if (actividad.pipe_fd[0] != -1)
+            {
+                close(actividad.pipe_fd[0]);
+                actividad.pipe_fd[0] = -1;
+            }
+            
+            int cantidadBloqueadas = bloquearDependientes(posicion, lista_actividades, dependientes);
+            tareas_resueltas += cantidadBloqueadas;
 
-    cerr << "[ERROR ]  Actividad "
-         << lista_actividades[posicion].id_Actividad
-         << " -fallo durante la ejecucion"
-         << endl;
-
-    if (lista_actividades[posicion].pipe_fd[0] != -1)
-    {
-        close(lista_actividades[posicion].pipe_fd[0]);
-        lista_actividades[posicion].pipe_fd[0] = -1;
+            cout << "[PLANIFICADOR] Rama de la actividad " << actividad.id_Actividad << " - cancelada" << endl << endl;
+        }
     }
-
-    int cantidadBloqueadas =
-        bloquearDependientes(
-            lista_actividades[posicion].id_Actividad,
-            lista_actividades);
-
-    tareas_resueltas += cantidadBloqueadas;
-
-    cout << "[PLANIFICADOR ] Rama de la actividad "
-         << lista_actividades[posicion].id_Actividad
-         << " -cancelada"
-         << endl
-         << endl;
-}
-    }
-
     return true;
 }
 
