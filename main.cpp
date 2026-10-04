@@ -10,8 +10,33 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <queue>
+#include <csignal>
 
 using namespace std;
+
+volatile sig_atomic_t interrupcionSolicitada = 0;
+
+void manejarSigint(int)
+{
+    interrupcionSolicitada = 1;
+}
+
+bool configurarSigint()
+{
+    struct sigaction accion{};
+    accion.sa_handler = manejarSigint;
+    sigemptyset(&accion.sa_mask);
+    accion.sa_flags = 0;
+
+    if (sigaction(SIGINT, &accion, nullptr) == -1)
+    {
+        cerr << "Error: no se pudo configurar el SIGINT." << endl;
+        return false;
+    }
+
+    return true;
+}
+
 struct Actividad
 {
     string id_Actividad;
@@ -380,6 +405,8 @@ pid_t crearProcesoActividad(Actividad& actividad)
 
     if (pid == 0)
     {
+        signal(SIGINT, SIG_IGN);
+
         close(actividad.pipe_fd[0]);
 
         if (actividad.pipe_entrada[1] != -1)
@@ -644,6 +671,37 @@ int bloquearDependientes(
     return cantidadBloqueadas;
 }
 
+void abortarProcesosActivos(vector<Actividad>& lista_actividades)
+{
+    cout << endl;
+    cout << "SEREMI, Ctrl+C detectado. Abortando actvidades activas. " << endl;
+
+    for (Actividad& actividad : lista_actividades)
+    {
+        if (actividad.pid_hijo > 0 && !actividad.completada && !actividad.fallida)
+        {
+            kill(actividad.pid_hijo, SIGTERM);
+        }
+    }
+    for (Actividad& actividad :lista_actividades)
+    {
+        if (actividad.pid_hijo > 0 && !actividad.completada && !actividad.fallida)
+        {
+            waitpid(actividad.pid_hijo, nullptr, 0);
+
+            if (actividad.pipe_fd[0] != -1)
+            {
+                close(actividad.pipe_fd[0]);
+                actividad.pipe_fd[0] = -1;
+            }
+            actividad.bloqueada = true;
+            actividad.pid_hijo =-1;
+        }
+    }
+
+    cout << "SEREMI, todas las actividades activas fueron detenidas." << endl;
+}
+
 bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
 {
     int procesos_activos = 0;
@@ -652,8 +710,18 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
 
     while (tareas_resueltas < total_tareas)
     {
+        if (interrupcionSolicitada)
+        {
+            abortarProcesosActivos(lista_actividades);
+            return false;
+        }
         for (Actividad& actividad : lista_actividades)
         {
+            if (interrupcionSolicitada)
+            {
+                break;
+            }
+
             if (procesos_activos >= k)
             {
                 break;
@@ -677,6 +745,12 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
             }
         }
 
+        if (interrupcionSolicitada)
+        {
+            abortarProcesosActivos(lista_actividades);
+            return false;
+        }
+
         if (procesos_activos == 0)
         {
             cerr << "Error: no hay actividades disponibles para ejecutar."
@@ -691,6 +765,12 @@ bool ejecutarPlan(vector<Actividad>& lista_actividades, int k)
 
         if (pidTerminado == -1)
         {
+            if (interrupcionSolicitada)
+            {
+                abortarProcesosActivos(lista_actividades);
+                return false;
+            }
+
             cerr << "Error al esperar un proceso hijo." << endl;
             return false;
         }
@@ -805,6 +885,12 @@ int main(int argc, char* argv[])
     cerr << "Error: K debe ser mayor que 0." << endl;
     return 1;
     }
+
+    if(!configurarSigint())
+    {
+        return 1;
+    }
+    
     cout << "Archivo que se va a leer: " << nombreArchivo << endl;
     cout << "Con el límite de concurrencia: " << k << endl;
 
