@@ -386,6 +386,32 @@ pid_t crearProcesoActividad(Actividad& actividad)
         return -1;
     }
 
+    if (!actividad.dependencias.empty())
+    {
+        if (actividad.insumos.size() != actividad.dependencias.size())
+        {
+            cerr << "Error: faltan insumos para iniciar la actividad " << actividad.id_Actividad << endl;
+
+            close(actividad.pipe_fd[0]);
+            close(actividad.pipe_fd[1]);
+
+            actividad.pipe_fd[0] = -1;
+            actividad.pipe_fd[1] = -1;
+            return -1;
+        }
+        if (pipe(actividad.pipe_entrada) == -1)
+        {
+            cerr << "Error: no se pudo crear el pipe de entrada para la actividad " << actividad.id_Actividad << endl;
+
+            close(actividad.pipe_fd[0]);
+            close(actividad.pipe_fd[1]);
+
+            actividad.pipe_fd[0] = -1;
+            actividad.pipe_fd[1] = -1;
+            return -1;
+        }
+    }
+
     pid_t pid = fork();
 
     if (pid < 0)
@@ -399,6 +425,18 @@ pid_t crearProcesoActividad(Actividad& actividad)
 
         actividad.pipe_fd[0] = -1;
         actividad.pipe_fd[1] = -1;
+
+        if (actividad.pipe_entrada[0] != -1)
+        {
+            close(actividad.pipe_entrada[0]);
+            actividad.pipe_entrada[0] = -1;
+        }
+
+        if (actividad.pipe_entrada[1] != -1)
+        {
+            close(actividad.pipe_entrada[1]);
+            actividad.pipe_entrada[1] = -1;
+        }
 
         return -1;
     }
@@ -430,6 +468,11 @@ pid_t crearProcesoActividad(Actividad& actividad)
                      << actividad.id_Actividad
                      << " - error al recibir insumo"
                      << endl;
+                
+                if (actividad.pipe_entrada[0] != -1)
+                {
+                    close(actividad.pipe_entrada[0]);
+                }
 
                 close(actividad.pipe_fd[1]);
 
@@ -476,14 +519,52 @@ pid_t crearProcesoActividad(Actividad& actividad)
     close(actividad.pipe_fd[1]);
     actividad.pipe_fd[1] = -1;
 
+    if (actividad.pipe_entrada[0] != -1)
+    {
+        close(actividad.pipe_entrada[0]);
+        actividad.pipe_entrada[0] = -1;
+    }
+
+    for (const string& mensaje : actividad.insumos)
+    {
+      char buffer[256] = {};
+      
+      snprintf(buffer, sizeof(buffer), "%s", mensaje.c_str());
+
+      ssize_t bytesEscritos = write(actividad.pipe_entrada[1], buffer, sizeof(buffer));
+
+      if (bytesEscritos == -1)
+      {
+        cerr << "Error: no se pudo enviar un insumo a la actividad " << actividad.id_Actividad << endl;
+
+        kill(pid, SIGTERM);
+        waitpid(pid, nullptr, 0);
+
+        if (actividad.pipe_entrada[1] != -1)
+        {
+            close(actividad.pipe_entrada[1]);
+            actividad.pipe_entrada[1] = -1;
+        }
+        if (actividad.pipe_fd[0] != -1)
+        {
+            close(actividad.pipe_fd[0]);
+            actividad.pipe_fd[0] = -1;
+        }
+
+        return -1;
+
+      }
+    }
+
+    if (actividad.pipe_entrada[1] != -1)
+    {
+        close(actividad.pipe_entrada[1]);
+        actividad.pipe_entrada[1] = -1;
+    }
+
     actividad.pid_hijo = pid;
 
-    cout << "[PADRE]  Actividad "
-         << actividad.id_Actividad
-         << " - proceso "
-         << pid
-         << " creado"
-         << endl;
+    cout << "[PADRE]  Actividad " << actividad.id_Actividad << " - proceso " << pid << " creado" << endl;
 
     return pid;
 }
@@ -548,64 +629,9 @@ bool guardarInsumoEnDependientes(
             {
                 actividad.insumos.push_back(mensaje);
 
-                char buffer[256] = {};
-
-                string mensajeEnviar = mensaje;
-
-                if (mensajeEnviar.size() > 255)
-                {
-                    mensajeEnviar.resize(255);
-                }
-
-                snprintf(
-                    buffer,
-                    sizeof(buffer),
-                    "%s",
-                    mensajeEnviar.c_str());
-
-                ssize_t bytesEscritos =
-                    write(
-                        actividad.pipe_entrada[1],
-                        buffer,
-                        sizeof(buffer));
-
-                if (bytesEscritos == -1)
-                {
-                    cerr << "Error: no se pudo enviar el mensaje de la actividad "
-                         << actividad_finalizada.id_Actividad
-                         << " a la actividad "
-                         << actividad.id_Actividad
-                         << endl;
-
-                    return false;
-                }
-
-                cout << "[PIPE ]  Actividad "
-                     << actividad_finalizada.id_Actividad
-                     << " -> Actividad "
-                     << actividad.id_Actividad
-                     << " - mensaje enviado"
-                     << endl;
-
+                cout << "La actividad " << actividad.id_Actividad << " recibio un insumo desde la actividad " << actividad_finalizada.id_Actividad << endl;
                 break;
             }
-        }
-    }
-
-    return true;
-}
-
-bool inicializarPipesEntrada(vector<Actividad>& lista_actividades)
-{
-    for (Actividad& actividad : lista_actividades)
-    {
-        if (pipe(actividad.pipe_entrada) == -1)
-        {
-            cerr << "Error: no se pudo crear el pipe de entrada para la actividad "
-                 << actividad.id_Actividad
-                 << endl;
-
-            return false;
         }
     }
 
@@ -674,7 +700,7 @@ int bloquearDependientes(
 void abortarProcesosActivos(vector<Actividad>& lista_actividades)
 {
     cout << endl;
-    cout << "SEREMI, Ctrl+C detectado. Abortando actvidades activas. " << endl;
+    cout << "SEREMI, Ctrl+C detectado. Abortando actividades activas. " << endl;
 
     for (Actividad& actividad : lista_actividades)
     {
@@ -890,7 +916,7 @@ int main(int argc, char* argv[])
     {
         return 1;
     }
-    
+
     cout << "Archivo que se va a leer: " << nombreArchivo << endl;
     cout << "Con el límite de concurrencia: " << k << endl;
 
@@ -915,10 +941,6 @@ int main(int argc, char* argv[])
     {
      return 1;
     }
-    if (!inicializarPipesEntrada(lista_actividades))
-    {
-    return 1;
-    } 
 
     cout << endl;
     cout << "Actividades cargadas: "
